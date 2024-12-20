@@ -24,12 +24,13 @@
 #include <exec/async_scope.hpp>
 #include <exec/when_any.hpp>
 #include <exec/task.hpp>
+
 #include <algorithm>
 #include <exception>
-#include <iostream>
 #include <fstream>
-#include <sstream>
 #include <string>
+
+#include <fmt/format.h>
 
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
@@ -95,12 +96,13 @@ struct buffered_stream
     }
     auto write_response(std::string_view message, std::string_view response) -> exec::task<void>
     {
-        std::ostringstream out;
-        out << "HTTP/1.1 " << message << "\r\n"
-             << "Content-Length: " << response.size() << "\r\n"
-             << "\r\n"
-             ;
-        std::string head(out.str());
+        std::string head = fmt::format(
+            "HTTP/1.1 {}\r\n"
+            "Content-Length: {}\r\n"
+            "\r\n",
+            message, response.size()
+        );
+
         std::size_t p{}, n{};
         do
             n = co_await stdnet::async_send(stream, stdnet::buffer(head.data() + p, head.size() - p));
@@ -149,11 +151,30 @@ std::unordered_map<std::string, std::string> res
     {"/fav.png", "data/fav.png"}
 };
 
+
+template<>
+struct fmt::formatter<stdnet::ip::basic_endpoint<stdnet::ip::tcp>>
+{
+  template<typename ParseContext>
+  constexpr auto parse(ParseContext& ctx) const
+  {
+    return ctx.begin();
+  }
+
+  template<typename FormatContext>
+  auto format(const auto endpoint, FormatContext& ctx) const{
+    std::ostringstream os;
+    os << endpoint;
+    return fmt::format_to(ctx.out(), "{}", os.str());
+  }
+};
+
+
 template <typename Stream>
 auto make_client(Stream s) -> exec::task<void>
 {
-    std::unique_ptr<char const, decltype([](char const* str){ std::cout << str; })> dtor("stopping client\n");
-    std::cout << "starting client\n";
+    std::unique_ptr<char const, decltype([](char const* str){ fmt::println("{}", str); })> dtor("stopping client");
+    fmt::println("starting client");
 
     buffered_stream<Stream> stream{std::move(s)};
     bool keep_alive{true};
@@ -170,7 +191,7 @@ auto make_client(Stream s) -> exec::task<void>
         if (r.method == "GET"sv)
         {
             auto it = res.find(r.uri);
-            std::cout << "getting '" << r.uri << "'->" << (it == res.end()? "404": "OK") << "\n";
+            fmt::println("getting {} -> {}", r.uri, (it == res.end()? "404": "OK"));
             if (it == res.end())
             {
                 co_await stream.write_response("404 NOT FOUND", "not found");
@@ -184,7 +205,7 @@ auto make_client(Stream s) -> exec::task<void>
         }
 
         keep_alive = r.headers["Connection"] == "Keep-Alive"sv;
-        std::cout << "keep-alive=" << std::boolalpha << keep_alive << "\n";
+        fmt::println("keep-alive={}", keep_alive);
     }
 }
 
@@ -194,19 +215,18 @@ auto make_server(auto& context, auto& scope, auto endpoint) -> exec::task<void>
     while (true)
     {
         auto[stream, client] = co_await stdnet::async_accept(acceptor);
-        std::cout << "received a connection from '" << client << "'\n";
+        fmt::println("received a connection from {}", client);
         scope.spawn(exec::when_any(
             stdnet::async_resume_after(context.get_scheduler(), 10s),
             make_client(::std::move(stream))
             )
-            | stdexec::upon_error([](auto){ std::cout << "error\n"; })
+            | stdexec::upon_error([](auto){ fmt::println("error"); })
             );
     }
 }
 
 int main()
 {
-    std::cout << std::unitbuf;
     try
     {
         stdnet::io_context        context;
@@ -217,8 +237,8 @@ int main()
 
         context.run();
     }
-    catch (std::exception const& ex)
+    catch (std::exception const& exc)
     {
-        std::cout << "ERROR: " << ex.what() << "\n";
+        fmt::println("ERROR: {}", exc.what());
     }
 }
