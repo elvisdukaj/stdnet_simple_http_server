@@ -22,5 +22,6 @@ class StdexecTestPackage(ConanFile):
     cmake.build()
 
   def layout(self):
+    self.folders.build_folder_vars = [                                                                "settings.os",                                                                                "settings.arch",                                                                              "settings.compiler",                                                                          "settings.compiler.version"                                                               ]
     cmake_layout(self)
 
