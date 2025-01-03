@@ -27,12 +27,12 @@
 #include <stdnet/timer.hpp>
 
 #include <algorithm>
+#include <array>
 #include <exception>
 #include <fstream>
 #include <string>
 
 #include <fmt/format.h>
-#include <thread>
 
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
@@ -43,7 +43,7 @@ struct parser {
     char const* it{nullptr};
     char const* end{it};
 
-    bool empty() const { return it == end; }
+    [[nodiscard]] bool empty() const { return it == end; }
     std::string_view find(char c) {
         auto f{std::find(it, end, c)};
         auto begin{it};
@@ -63,9 +63,11 @@ struct parser {
 };
 
 template <typename Stream> struct buffered_stream {
-    static constexpr char sep[]{'\r', '\n', '\r', '\n', '\0'};
+    static constexpr std::string_view sep = "\r\n\r\n\0";
+    static constexpr std::size_t BUFFER_SIZE = 1024u;
     Stream stream;
-    std::vector<char> buffer = std::vector<char>(1024u);
+
+    std::vector<char> buffer = std::vector<char>(BUFFER_SIZE);
     std::size_t pos{};
     std::size_t end{};
 
@@ -137,8 +139,8 @@ auto read_http_request(auto& stream) -> exec::task<request> {
     co_return r;
 }
 
-std::unordered_map<std::string, std::string> res{{"/", "data/hello.html"},
-                                                 {"/fav.png", "data/fav.png"}};
+const std::unordered_map<std::string, std::string> res{
+    {"/", "data/hello.html"}, {"/fav.png", "data/fav.png"}};
 
 template <> struct fmt::formatter<stdnet::ip::basic_endpoint<stdnet::ip::tcp>> {
     template <typename ParseContext>
